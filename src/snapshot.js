@@ -26,9 +26,10 @@ const RARE_ORES = new Set(["diamond_ore", "deepslate_diamond_ore", "emerald_ore"
 const DANGER_BLOCKS = new Set(["lava", "flowing_lava", "fire"]);
 
 export class SnapshotEngine {
-  constructor(bot, temp) {
+  constructor(bot, temp, boundPlayer = null) {
     this.bot = bot;
     this.temp = temp;
+    this.boundPlayer = boundPlayer; // 绑定玩家名（多人服务器，与 router 统一）
     this.cooldowns = {};   // ruleId -> 下次可触发时间戳
     this.lastState = {};   // 记录上次状态用于变化检测
     // 挂机检测状态
@@ -95,6 +96,9 @@ export class SnapshotEngine {
 
   // ─── 工具：获取玩家 ────────────────────────────────────
   _player() {
+    if (this.boundPlayer && this.bot.players[this.boundPlayer]) {
+      return this.bot.players[this.boundPlayer];
+    }
     const key = Object.keys(this.bot.players).find(k => k !== this.bot.username);
     return key ? this.bot.players[key] : null;
   }

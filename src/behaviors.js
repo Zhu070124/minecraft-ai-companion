@@ -220,6 +220,11 @@ export class BehaviorEngine {
         this.onActionResult({ success: false, reason: "导航失败", action: "collect" });
         return false;
       }
+      // 寻路完成后、开挖前再检查一次中断位
+      if (this._aborted) {
+        this.onActionResult({ success: false, reason: "aborted", action: "collect" });
+        return false;
+      }
       await this.bot.dig(block);
       this.onActionResult({ success: true, action: "collect" });
       return true;

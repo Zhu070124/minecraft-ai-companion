@@ -64,6 +64,18 @@ const MAX_TOOL_ROUNDS = 4; // 最多几轮工具往返，防止死循环
 const AUTO_INTERVAL = 15000;       // 自主决策间隔（15 秒）
 const SPEECH_INTERVAL = 120000;    // 自主发言间隔（2 分钟）——决策照跑，但别每 15 秒都开口
 
+/** 安全解析 LLM 返回的 JSON 参数：剥 markdown 代码块 + 容错（LLM 输出不可信） */
+function safeJsonParse(str) {
+  if (!str) return {};
+  let s = String(str).trim();
+  s = s.replace(/^```(?:json|javascript|js)?\s*/i, "").replace(/```\s*$/, "").trim();
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null; // 解析失败，调用方据此跳过并记录
+  }
+}
+
 export class EventRouter {
   constructor(opts) {
     this.bot = opts.bot;
@@ -75,7 +87,7 @@ export class EventRouter {
     this.llmModel = opts.llmModel ?? "deepseek-chat";
     this.broadcast = opts.broadcast ?? (() => {});
     this.behaviors = new BehaviorEngine(opts.bot, (result) => this._onActionResult(result));
-    this.snapshot = new SnapshotEngine(opts.bot, opts.temp);
+    this.snapshot = new SnapshotEngine(opts.bot, opts.temp, opts.boundPlayer ?? process.env.BOUND_PLAYER ?? null);
     this.tavily = new TavilySearch(opts.tavilyApiKey);
 
     this.sessionPath = opts.sessionPath ?? DEFAULT_SESSION_PATH;
@@ -251,6 +263,8 @@ export class EventRouter {
         if (INFO_TOOLS.has(name)) infoCalls.push(call);
         else actionThisRound.push(call);
       }
+      // 只保留最后一轮的动作（信息型工具回灌后的最终结论），避免多轮动作堆积冲突
+      actionCalls.length = 0;
       actionCalls.push(...actionThisRound);
 
       // 没有信息型工具了 → 结束循环，交给 _execute
@@ -270,8 +284,7 @@ export class EventRouter {
   /** 执行信息型工具，返回要回灌给 LLM 的文本 */
   async _runInfoTool(call) {
     const name = call?.function?.name;
-    let args = {};
-    try { args = call?.function?.arguments ? JSON.parse(call.function.arguments) : {}; } catch { /* ignore */ }
+    const args = safeJsonParse(call.function.arguments) ?? {};
 
     if (name === "web_search") {
       try {
@@ -425,7 +438,11 @@ export class EventRouter {
     for (const call of toolCalls) {
       try {
         const fnName = call?.function?.name;
-        const args = call?.function?.arguments ? JSON.parse(call.function.arguments) : {};
+        const args = safeJsonParse(call.function.arguments);
+        if (args == null) {
+          console.error("[Agent] 工具参数 JSON 解析失败:", call?.function?.arguments);
+          continue;
+        }
         console.log("[Agent] 工具调用:", fnName, args);
         this._executeTool(fnName, args);
       } catch (err) {
@@ -571,16 +588,13 @@ export class EventRouter {
 
   /** 按图纸建造：原语 → 坐标矩阵 → 逐格放置 */
   _buildStructure(primitives, player) {
-    // 原点：玩家位置（玩家实体不存在则用 bot 脚下）
-    let origin;
-    if (player?.entity?.position) {
-      origin = player.entity.position;
-    } else if (this.bot.entity?.position) {
-      origin = this.bot.entity.position;
-    } else {
-      console.log("[Agent] build_structure 失败：无法确定原点");
+    // 原点：玩家位置。玩家不可见就拒绝，不擅自用 bot 位置（会建错地方）
+    if (!player?.entity?.position) {
+      console.log("[Agent] build_structure 失败：玩家不可见");
+      this.bot.chat("（我看不到你，没法确定在哪里建，你走近一点再试试吧）");
       return;
     }
+    const origin = player.entity.position;
 
     const result = expandPrimitives(primitives, origin);
     if (!result.ok) {
