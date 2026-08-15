@@ -68,6 +68,7 @@ export class TemperatureEngine {
     this.grudgeDecayPerDay = config.grudgeDecayPerDay ?? 2;
     this.activeGrudges = config.initialGrudges ?? [];
     this.history = [];
+    this.lastDailyTickAt = Date.now(); // 上次每日 tick 时间（持久化，重启不重置衰减周期）
     this.path = config.path ?? DEFAULT_PATH;
     this._load(); // 加载持久化的情感态（覆盖 startValue）
   }
@@ -114,6 +115,7 @@ export class TemperatureEngine {
           this.value = data.value;
           this.activeGrudges = data.activeGrudges ?? [];
           this.history = data.history ?? [];
+          this.lastDailyTickAt = data.lastDailyTickAt ?? Date.now();
         }
       }
     } catch (err) {
@@ -166,6 +168,7 @@ export class TemperatureEngine {
     const decay = this.events["daily_decay"] ?? -2;
     this.value = Math.max(0, Math.min(100, this.value + decay));
     this.history.push({ event: "daily_tick", delta: -(grudgePenalty - decay), value: Math.round(this.value), ts: Date.now() });
+    this.lastDailyTickAt = Date.now();
     this._save();
   }
 
@@ -176,6 +179,7 @@ export class TemperatureEngine {
       value: this.value,
       activeGrudges: this.activeGrudges.map(g => ({ ...g })),
       history: this.history.slice(-100),
+      lastDailyTickAt: this.lastDailyTickAt,
     };
   }
 

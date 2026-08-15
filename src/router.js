@@ -48,7 +48,7 @@ const REFLECT_TOOL = [
       parameters: {
         type: "object",
         properties: {
-          insight: { type: "string", description: "一句具体朴素的自我认知（关于你或你和泡芙的关系），不超过20字。禁止元反思（禁止反思「反思」本身）、禁止抽象空转。没有新的认识就填空字符串。" },
+          insight: { type: "string", description: "一句具体朴素的自我认知（关于你或你和玩家的关系），不超过20字。禁止元反思（禁止反思「反思」本身）、禁止抽象空转。没有新的认识就填空字符串。" },
           temperature_delta: { type: "integer", description: "情感变化：正数=更亲近/依赖，负数=更疏远，0=无变化，范围 -5 到 +5" },
         },
         required: ["insight", "temperature_delta"],
@@ -112,12 +112,14 @@ export class EventRouter {
   start() {
     if (this.timer) return;
     this._scheduleNext();
-    // 每日 tick：记仇逐日衰减 + 温度自然衰减（24h 一次，长期运行才生效）
+    // 每日 tick：记仇逐日衰减 + 温度自然衰减（每小时检查，距上次超 24h 才跑，重启不重置周期）
     if (!this._dailyTimer) {
       this._dailyTimer = setInterval(() => {
-        this.temp.dailyTick();
-        console.log("[Agent] 每日 tick:", this.temp.describe());
-      }, 24 * 3600 * 1000);
+        if (Date.now() - (this.temp.lastDailyTickAt ?? 0) >= 24 * 3600 * 1000) {
+          this.temp.dailyTick();
+          console.log("[Agent] 每日 tick:", this.temp.describe());
+        }
+      }, 3600 * 1000);
     }
   }
 
@@ -152,7 +154,7 @@ export class EventRouter {
         if (data.isPlayer) {
           this._lastPlayerInteractionAt = Date.now();
           this.temp.apply("betrayed");
-          this._triggerReflect({ trigger: "泡芙打了我" });
+          this._triggerReflect({ trigger: `${this._playerName()}打了我` });
         }
         await this.decide("hurt", data);
         break;
@@ -506,18 +508,18 @@ export class EventRouter {
     const idleMin = Math.floor((Date.now() - this._lastPlayerInteractionAt) / 60000);
 
     if (stage === "attached" || stage === "warm") {
-      desires.push("想待在泡芙身边");
+      desires.push(`想待在${this._playerName()}身边`);
     } else if (stage === "cold" || stage === "cool") {
       desires.push("想保持距离，不太想主动靠近");
     }
     if (grudges.length > 0) {
-      desires.push("心里还有点芥蒂（记仇中），不太想主动搭理泡芙");
+      desires.push(`心里还有点芥蒂（记仇中），不太想主动搭理${this._playerName()}`);
     }
     if (idleMin >= 3) {
       desires.push("有点无聊了，想自己找点事做");
     }
     if (stage === "attached" && idleMin >= 5) {
-      desires.push("想给泡芙准备点小惊喜");
+      desires.push(`想给${this._playerName()}准备点小惊喜`);
     }
     if (this._getTimeOfDay() === "night") {
       desires.push("天黑了，想找个安全的地方待着");
@@ -532,6 +534,11 @@ export class EventRouter {
     }
     const playerKey = Object.keys(this.bot.players).find(k => k !== this.bot.username);
     return playerKey ? this.bot.players[playerKey] : null;
+  }
+
+  /** 当前玩家称呼（绑定玩家名，兜底「玩家」），避免硬编码固定称谓导致人设割裂 */
+  _playerName() {
+    return this.boundPlayer ?? "玩家";
   }
 
   _executeTool(fnName, args = {}) {
