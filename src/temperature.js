@@ -70,6 +70,7 @@ export class TemperatureEngine {
     this.activeGrudges = config.initialGrudges ?? [];
     this.history = [];
     this.lastDailyTickAt = Date.now(); // 上次每日 tick 时间（持久化，重启不重置衰减周期）
+    this._saveTimer = null; // 写盘防抖计时器
     this.path = config.path ?? DEFAULT_PATH;
     this._load(); // 加载持久化的情感态（覆盖 startValue）
   }
@@ -84,12 +85,18 @@ export class TemperatureEngine {
     if (this.grudgeEnabled && this.grudgeConfig[event]) {
       const gc = this.grudgeConfig[event];
       const expiresAt = Date.now() + gc.durationDays * 86400_000;
-      this.activeGrudges.push({
-        event,
-        label: gc.label,
-        expiresAt,
-        dailyDecay: gc.dailyDecay,
-      });
+      // 相同事件的记仇合并：刷新过期时间，不重复叠加惩罚
+      const existing = this.activeGrudges.find(g => g.event === event);
+      if (existing) {
+        existing.expiresAt = expiresAt;
+      } else {
+        this.activeGrudges.push({
+          event,
+          label: gc.label,
+          expiresAt,
+          dailyDecay: gc.dailyDecay,
+        });
+      }
     }
 
     this.cleanGrudges();
@@ -124,22 +131,27 @@ export class TemperatureEngine {
     }
   }
 
-  /** 把情感态写入磁盘 */
+  /** 把情感态写入磁盘（500ms 防抖，频繁变更合并为一次落盘） */
   _save() {
-    try {
-      mkdirSync(dirname(this.path), { recursive: true });
-      writeFileSync(this.path, JSON.stringify(this.serialize()), "utf-8");
-    } catch (err) {
-      console.error("[Tempura] 持久化失败:", err.message);
-    }
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      try {
+        mkdirSync(dirname(this.path), { recursive: true });
+        writeFileSync(this.path, JSON.stringify(this.serialize()), "utf-8");
+      } catch (err) {
+        console.error("[Tempura] 持久化失败:", err.message);
+      }
+    }, 500);
   }
 
-  /** 当前阶段 */
+  /** 当前阶段（四舍五入消除浮点区间缝隙） */
   get stage() {
+    const v = Math.round(this.value);
     for (const s of STAGES) {
-      if (this.value >= s.min && this.value <= s.max) return { ...s };
+      if (v >= s.min && v <= s.max) return { ...s };
     }
-    return { ...STAGES[0] };
+    return { ...STAGES[STAGES.length - 1] }; // 兜底最高档，而非最低档
   }
 
   /** 可读描述 */

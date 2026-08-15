@@ -193,8 +193,8 @@ export class EventRouter {
     // 串行化：每个决策排在上一个后面，绝不丢弃并发事件
     // （原来 isDeciding 会直接 return 丢掉并发来的 chat，导致 bot「不理人」）
     // 队列限长：堆积超过阈值就丢弃低优先级事件（自主/反思），保留玩家核心事件
-    if (this._pendingCount >= 10 && (reason === "autonomous" || reason === "reflect")) {
-      return Promise.resolve();
+    if (this._pendingCount >= 30 || (this._pendingCount >= 10 && (reason === "autonomous" || reason === "reflect"))) {
+      return Promise.resolve(); // 30 全局硬上限防刷屏堆积；10 起丢低优先级
     }
     this._pendingCount++;
     const run = async () => {

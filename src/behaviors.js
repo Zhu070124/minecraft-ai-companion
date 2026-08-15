@@ -184,6 +184,10 @@ export class BehaviorEngine {
 
   /** 中断当前动作（新指令到来时调用）：置中断标志 + 停导航 + 复位状态 */
   abort() {
+    // 若有进行中的动作，推送一条 aborted 结果，让 LLM 下一轮知道上个动作被打断了
+    if (this.currentAction !== "发呆") {
+      this.onActionResult({ success: false, reason: "aborted", action: this.currentAction });
+    }
     this._aborted = true;
     this.stopMoving();
     this.currentAction = "发呆";

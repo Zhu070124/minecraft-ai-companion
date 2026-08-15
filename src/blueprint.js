@@ -87,6 +87,17 @@ function _validatePrimitive(p) {
   if (dims.some(d => d > MAX_SIZE || d < 0)) {
     return `原语 ${p.action} 尺寸超限（单轴最大 ${MAX_SIZE}）`;
   }
+  // 最小尺寸校验：尺寸 0 会生成空坐标数组（无报错但无效果，难排查）
+  const minDim = (() => {
+    switch (p.action) {
+      case "floor": return Math.max(s.x ?? 0, s.z ?? 0);
+      case "wall": return Math.max(len, h);
+      case "pillar": return h;
+      case "box": return Math.max(s.x ?? 0, s.y ?? 0, s.z ?? 0);
+      default: return 1;
+    }
+  })();
+  if (minDim < 1) return `原语 ${p.action} 尺寸至少为 1`;
   return null;
 }
 

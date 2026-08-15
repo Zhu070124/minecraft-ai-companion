@@ -135,7 +135,8 @@ export function createBot(opts) {
           const p = bot.players[pname];
           if (p?.entity) {
             const dist = entity.position.distanceTo(p.entity.position);
-            if (dist < 3 && dist < closestDist) {
+            // 物品丢出有初速度，落地离玩家 2-4 格，阈值放宽到 6 格
+            if (dist < 6 && dist < closestDist) {
               closestDist = dist;
               closestPlayer = pname;
             }
