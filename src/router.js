@@ -91,6 +91,8 @@ export class EventRouter {
     this._reflectCooldown = 90000; // 反思冷却（90 秒，事件驱动 + 定时兜底共用）
     this._lastPlayerInteractionAt = Date.now(); // 上次玩家互动时间（冷场追踪，欲望派生用）
     this._dailyTimer = null;   // 每日 tick 定时器
+    this._pendingCount = 0;    // 决策队列里排队的事件数（限长用）
+    this.boundPlayer = opts.boundPlayer ?? process.env.BOUND_PLAYER ?? null; // 绑定玩家名（多人服务器用）
   }
 
   // ─── 生命周期 ─────────────────────────────────────────────
@@ -176,7 +178,15 @@ export class EventRouter {
   async decide(reason, data) {
     // 串行化：每个决策排在上一个后面，绝不丢弃并发事件
     // （原来 isDeciding 会直接 return 丢掉并发来的 chat，导致 bot「不理人」）
-    const run = () => this._decide(reason, data);
+    // 队列限长：堆积超过阈值就丢弃低优先级事件（自主/反思），保留玩家核心事件
+    if (this._pendingCount >= 10 && (reason === "autonomous" || reason === "reflect")) {
+      return Promise.resolve();
+    }
+    this._pendingCount++;
+    const run = async () => {
+      try { await this._decide(reason, data); }
+      finally { this._pendingCount--; }
+    };
     this._decideChain = this._decideChain.then(run, run);
     return this._decideChain;
   }
@@ -209,6 +219,10 @@ export class EventRouter {
       }
     } catch (err) {
       console.error("[Agent] 决策失败:", err.message);
+      // LLM 故障降级：玩家说话时至少回一句，别彻底沉默
+      if (reason === "chat") {
+        this.bot.chat("（我好像有点卡住了，稍等我一下）");
+      }
     }
   }
 
@@ -494,11 +508,18 @@ export class EventRouter {
     return desires;
   }
 
+  /** 取交互目标玩家：优先绑定的玩家，否则退回第一个非 bot 玩家 */
+  _getPlayer() {
+    if (this.boundPlayer && this.bot.players[this.boundPlayer]) {
+      return this.bot.players[this.boundPlayer];
+    }
+    const playerKey = Object.keys(this.bot.players).find(k => k !== this.bot.username);
+    return playerKey ? this.bot.players[playerKey] : null;
+  }
+
   _executeTool(fnName, args = {}) {
-    const playerKeys = Object.keys(this.bot.players);
-    const playerKey = playerKeys.find(k => k !== this.bot.username);
-    const player = playerKey ? this.bot.players[playerKey] : null;
-    console.log("[Agent] bot.players keys:", playerKeys.join(","), "| bot.username:", this.bot.username, "| player.entity:", player?.entity ? "存在" : "null");
+    const player = this._getPlayer();
+    console.log("[Agent] bot.players keys:", Object.keys(this.bot.players).join(","), "| bot.username:", this.bot.username, "| player.entity:", player?.entity ? "存在" : "null");
 
     // 记录当前动作（stop 表示回到发呆）
     this.currentAction = fnName === "stop" ? "发呆" : fnName;

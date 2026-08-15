@@ -247,9 +247,10 @@ export class SnapshotEngine {
     const e = this._playerEntity();
     if (!e || !this.bot.entity) return null;
     const p = e.position;
-    for (let dx = -8; dx <= 8; dx++) {
-      for (let dy = -4; dy <= 4; dy++) {
-        for (let dz = -8; dz <= 8; dz++) {
+    // 缩小扫描范围（原 17×9×17=2601 次 blockAt，现 11×5×11=605 次，降 4 倍）
+    for (let dx = -5; dx <= 5; dx++) {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dz = -5; dz <= 5; dz++) {
           const b = this.bot.blockAt(p.offset(dx, dy, dz));
           if (b && RARE_ORES.has(b.name)) {
             return `你附近有${b.name.includes("diamond") ? "钻石" : b.name.includes("emerald") ? "绿宝石" : "远古残骸"}！`;

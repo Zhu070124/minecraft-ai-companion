@@ -26,23 +26,27 @@ export class LocalMemory {
     this.agentName = config.agentName ?? "mc-companion";
     this.path = config.path ?? DEFAULT_PATH;
     this.maxCandidates = config.maxCandidates ?? 30; // 检索候选上限（太旧的不参与）
+    this._cache = null; // 内存缓存，避免每次读写全量磁盘 JSON
   }
 
   // ─── 存储层 ─────────────────────────────────────────────
 
   _load() {
+    if (this._cache) return this._cache; // 命中内存缓存，不重复读盘
     if (!existsSync(this.path)) {
       mkdirSync(dirname(this.path), { recursive: true });
       writeFileSync(this.path, JSON.stringify({ memories: [] }, null, 2), "utf-8");
     }
     try {
-      return JSON.parse(readFileSync(this.path, "utf-8"));
+      this._cache = JSON.parse(readFileSync(this.path, "utf-8"));
     } catch {
-      return { memories: [] };
+      this._cache = { memories: [] };
     }
+    return this._cache;
   }
 
   _save(store) {
+    this._cache = store; // 同步更新缓存
     writeFileSync(this.path, JSON.stringify(store, null, 2), "utf-8");
   }
 
@@ -66,8 +70,8 @@ export class LocalMemory {
       created_at: new Date().toISOString(),
     };
     store.memories.push(entry);
-    // 控制总量，太旧的丢弃（轻量库不无限膨胀）
-    if (store.memories.length > 200) store.memories = store.memories.slice(-200);
+    // 控制总量，太旧的丢弃（放宽到 1000 条，长期陪伴不失忆）
+    if (store.memories.length > 1000) store.memories = store.memories.slice(-1000);
     this._save(store);
     return { id: entry.id, status: "recorded" };
   }
