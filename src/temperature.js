@@ -46,7 +46,8 @@ const DEFAULT_EVENTS = {
 
 // 记仇配置：严重事件会持续降温
 const DEFAULT_GRUDGE_CONFIG = {
-  betrayed:       { label: "坑过我",       dailyDecay: 2,  durationDays: 7 },
+  // 即时 -25 保留事件冲击，记仇 dailyDecay 降为 1（只是「余温」，不是持续重罚）
+  betrayed:       { label: "坑过我",       dailyDecay: 1,  durationDays: 7 },
   friendly_fire:  { label: "打过我",       dailyDecay: 1,  durationDays: 2 },
   killed_pet:     { label: "杀了我的宠物", dailyDecay: 1,  durationDays: 14 },
 };
