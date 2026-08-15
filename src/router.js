@@ -212,16 +212,15 @@ export class EventRouter {
         await this._reflect(data);
         return;
       }
-      // 1. 感知
-      const perception = await this._perceive(reason, data);
-      // 1.5 玩家消息先入日志（否则信息型工具结果会排到玩家消息前面，顺序错乱）
+      // 1. 玩家消息先入日志 + 立即中断长任务（在感知前，避免被记忆检索延迟 1-5 秒）
       if (reason === "chat" && data?.text) {
         this._pushLog({ type: "user", content: data.text });
-        // 新指令到来：中断正在执行的长任务（建造/采集/导航），保证 currentAction 与实际一致
         this.behaviors.abort();
         this.currentAction = "发呆";
       }
-      // 2. 工具调用循环（每轮从事件日志重新派生消息）
+      // 2. 感知
+      const perception = await this._perceive(reason, data);
+      // 3. 工具调用循环（每轮从事件日志重新派生消息）
       const { text, actionCalls } = await this._toolLoop(perception);
       // 3. 行动（带 reason，autonomous 的发言会被节流）
       this._execute(text, actionCalls, reason);
