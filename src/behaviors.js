@@ -308,73 +308,61 @@ export class BehaviorEngine {
   }
 
   /**
-   * 按坐标矩阵逐格建造（build_structure 的行动层）
-   * 方块列表已按 y 升序（从下往上），每格：
-   *   库存检查 → 装备 → 走到目标旁 → 用下方方块作参考放置
+   * 按坐标矩阵建造（build_structure 的行动层）—— reach 分组放置
+   * 方块列表已按 y 升序（从下往上）。每格：
+   *   已放则跳过 → 实体占用则跳过 → 库存+装备 → 够得着直接放 / 够不着导航到附近 → 试 6 邻格放置
    * @param {Array<{block:string,x:number,y:number,z:number}>} blocks - 绝对坐标矩阵
    */
   async buildFromMatrix(blocks, origin) {
     if (!Array.isArray(blocks) || blocks.length === 0) return false;
     this.currentAction = "build";
 
-    // 原点（用于算「站到邻格、朝原点方向退一格」的站位）
-    const ox = origin?.x ?? this.bot.entity?.position?.x ?? 0;
-    const oz = origin?.z ?? this.bot.entity?.position?.z ?? 0;
-    const oy = origin?.y ?? this.bot.entity?.position?.y ?? 0; // 站位高度固定在地面层，不是目标块高度（高层块悬空会走不到）
+    const oy = origin?.y ?? this.bot.entity?.position?.y ?? 0; // 站位地面层（不是目标块高度，高层块悬空走不到）
+    const REACH = 4; // 放方块的最大距离（够得着就不导航，只挪一次覆盖一片）
 
     let placed = 0;
     const failed = [];
 
     for (const b of blocks) {
       try {
-        // 0. 目标位置被实体（玩家/生物）占着就跳过，避免 placeBlock 5 秒超时；retry 会补
-        if (this._isOccupiedByEntity(new Vec3(b.x, b.y, b.z))) {
+        const targetVec = new Vec3(b.x, b.y, b.z);
+
+        // 0. 已放好的方块跳过（避免重复放 + 白走一趟）
+        const existing = this.bot.blockAt(targetVec);
+        if (existing && existing.name !== "air" && existing.name !== "cave_air") {
+          placed++;
+          continue;
+        }
+
+        // 1. 目标位置被实体（玩家/生物）占着就跳过
+        if (this._isOccupiedByEntity(targetVec)) {
           failed.push({ ...b, reason: "位置被实体占用" });
           continue;
         }
-        // 1. 库存 + 装备
-        const item = this.bot.inventory.items().find(i => i.name === b.block);
+
+        // 2. 库存 + 装备
+        const item = this.bot.inventory.items().find((i) => i.name === b.block);
         if (!item) {
           failed.push({ ...b, reason: `库存没有 ${b.block}` });
           continue;
         }
         await this.bot.equip(item, "hand");
 
-        // 2. 站到目标块的邻格（朝原点方向退一格）并等待到位
-        //    站到方块本身会让 placeBlock 落到自己脚底 → blockUpdate 永远等不到 → 超时
-        const adx = Math.abs(b.x - ox), adz = Math.abs(b.z - oz);
-        const standX = adx >= adz ? b.x - Math.sign(b.x - ox || 1) : b.x;
-        const standZ = adx >= adz ? b.z : b.z - Math.sign(b.z - oz || 1);
-        const standPos = new Vec3(standX, oy, standZ);
-        const arrived = await this._navigateTo(standPos, 1, "build");
-        if (!arrived) {
-          failed.push({ ...b, reason: "导航失败（到不了目标）" });
-          continue;
+        // 3. 够得着就直接放；够不着导航到目标附近（地面层，reach 半径，覆盖一片）
+        const dist = this.bot.entity.position.distanceTo(targetVec.offset(0.5, 0.5, 0.5));
+        if (dist > REACH) {
+          const navTarget = new Vec3(b.x, oy, b.z);
+          const arrived = await this._navigateTo(navTarget, REACH, "build");
+          if (!arrived) {
+            failed.push({ ...b, reason: "导航失败（到不了目标）" });
+            continue;
+          }
         }
 
-        // 3. 找下方参考方块（从下往上放，下方一定有已放置的或地面）
-        const refPos = new Vec3(b.x, b.y - 1, b.z);
-        const refBlock = this.bot.blockAt(refPos);
-        if (!refBlock || refBlock.name === "air" || refBlock.name === "cave_air") {
-          failed.push({ ...b, reason: "下方没有参考方块" });
-          continue;
-        }
-
-        // 4. 面向参考方块，朝上放置（faceVector 指向目标=参考上方）
-        //    若 bot 自己身体占了目标位置，先跳起来让开再放
-        const targetVec = new Vec3(b.x, b.y, b.z);
-        const selfBlocked = this._isSelfOccupying(targetVec);
-        if (selfBlocked) {
-          console.log(`[Build] 自挡块 ${b.block}(${b.x},${b.y},${b.z}) → 起跳让开`);
-          this.bot.setControlState("jump", true);
-          await new Promise((r) => setTimeout(r, 120));
-        }
-        await this.bot.lookAt(refBlock.position.offset(0.5, 0.5, 0.5));
-        await this.bot.placeBlock(refBlock, { x: 0, y: 1, z: 0 });
-        if (selfBlocked) {
-          this.bot.setControlState("jump", false);
-        }
-        placed++;
+        // 4. 试 6 邻格找参考方块放置
+        const ok = await this._placeAt(targetVec);
+        if (ok) placed++;
+        else failed.push({ ...b, reason: "找不到参考方块" });
       } catch (err) {
         failed.push({ ...b, reason: err.message });
       }
@@ -383,8 +371,41 @@ export class BehaviorEngine {
     this.onActionResult({
       success: failed.length === 0,
       action: "build",
-      reason: failed.length > 0 ? `${placed} 成功 / ${failed.length} 失败（${failed.slice(0, 3).map(f => f.reason).join("; ")}）` : undefined,
+      reason: failed.length > 0 ? `${placed} 成功 / ${failed.length} 失败（${failed.slice(0, 3).map((f) => f.reason).join("; ")}）` : undefined,
     });
     return failed.length === 0;
+  }
+
+  /**
+   * 在目标位置放方块：试 6 个邻格找参考方块，用正确的 faceVec 放置；自挡则起跳让开
+   * @param {Vec3} targetVec - 目标方块坐标
+   * @returns {Promise<boolean>}
+   */
+  async _placeAt(targetVec) {
+    const adj = [[0, -1, 0], [0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]];
+
+    // 自挡则先起跳让开
+    const selfBlocked = this._isSelfOccupying(targetVec);
+    if (selfBlocked) {
+      this.bot.setControlState("jump", true);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    try {
+      for (const [dx, dy, dz] of adj) {
+        const refBlock = this.bot.blockAt(targetVec.offset(dx, dy, dz));
+        if (!refBlock || refBlock.boundingBox !== "block") continue;
+        try {
+          const faceVec = targetVec.minus(refBlock.position); // 参考方块 → 目标 的方向向量
+          await this.bot.lookAt(refBlock.position.offset(0.5, 0.5, 0.5));
+          await this.bot.placeBlock(refBlock, faceVec);
+          return true;
+        } catch {
+          // 这个参考方块不行，试下一个
+        }
+      }
+      return false;
+    } finally {
+      if (selfBlocked) this.bot.setControlState("jump", false);
+    }
   }
 }
