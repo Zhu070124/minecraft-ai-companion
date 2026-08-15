@@ -35,6 +35,7 @@ export class BehaviorEngine {
     this.onActionResult = onActionResult || (() => {});
     this.currentAction = "发呆";
     this.stuckTimer = null;
+    this._aborted = false;   // 中断标志：新指令到来时置位，长任务循环里检查
 
     // ─── navigate 结果验证 + 回滚 ─────────────────────────
     try {
@@ -181,6 +182,13 @@ export class BehaviorEngine {
     try { this.bot.navigate.stop(); } catch { /* ignore */ }
   }
 
+  /** 中断当前动作（新指令到来时调用）：置中断标志 + 停导航 + 复位状态 */
+  abort() {
+    this._aborted = true;
+    this.stopMoving();
+    this.currentAction = "发呆";
+  }
+
   /** 跳一下（用于让开自己身体挡住的方块） */
   async jump() {
     this.bot.setControlState("jump", true);
@@ -198,15 +206,27 @@ export class BehaviorEngine {
     return Math.floor(p.x) === pos.x && pos.y >= yMin && pos.y <= yMax && Math.floor(p.z) === pos.z;
   }
 
-  /** 采集指定方块：找到最近的匹配方块，走过去挖掉 */
-  collectBlock(matchFn, maxDistance = 20) {
+  /** 采集指定方块：找到最近的匹配方块，走过去挖掉，结果回灌 */
+  async collectBlock(matchFn, maxDistance = 20) {
     try {
       const block = this.bot.findBlock({ matching: matchFn, maxDistance });
-      if (!block) return false;
-      this._move(block.position, 3, "collect");
-      this.bot.dig(block).catch(() => {});
+      if (!block) {
+        this.onActionResult({ success: false, reason: "找不到目标方块", action: "collect" });
+        return false;
+      }
+      this._aborted = false;
+      const arrived = await this._navigateTo(block.position, 3, "collect");
+      if (!arrived) {
+        this.onActionResult({ success: false, reason: "导航失败", action: "collect" });
+        return false;
+      }
+      await this.bot.dig(block);
+      this.onActionResult({ success: true, action: "collect" });
       return true;
-    } catch { return false; }
+    } catch (err) {
+      this.onActionResult({ success: false, reason: err.message, action: "collect" });
+      return false;
+    }
   }
 
   /** 砍树 */
@@ -225,24 +245,38 @@ export class BehaviorEngine {
       const target = this.bot.nearestEntity(e =>
         e.name === name || (e.displayName && e.displayName === name)
       );
-      if (!target) return false;
+      if (!target) {
+        this.onActionResult({ success: false, reason: `找不到 ${name}`, action: "attack" });
+        return false;
+      }
       this._move(target.position, 3, "attack");
       this.bot.lookAt(target.position.offset(0, 1.5, 0));
       this.bot.attack(target);
+      this.onActionResult({ success: true, action: "attack" });
       return true;
-    } catch { return false; }
+    } catch (err) {
+      this.onActionResult({ success: false, reason: err.message, action: "attack" });
+      return false;
+    }
   }
 
   /** 攻击最近的敌对生物 */
   attackNearest() {
     try {
       const hostile = this.bot.nearestEntity(e => HOSTILE_NAMES.includes(e.name));
-      if (!hostile) return false;
+      if (!hostile) {
+        this.onActionResult({ success: false, reason: "附近没有敌对生物", action: "attack" });
+        return false;
+      }
       this._move(hostile.position, 3, "attack");
       this.bot.lookAt(hostile.position.offset(0, 1.5, 0));
       this.bot.attack(hostile);
+      this.onActionResult({ success: true, action: "attack" });
       return true;
-    } catch { return false; }
+    } catch (err) {
+      this.onActionResult({ success: false, reason: err.message, action: "attack" });
+      return false;
+    }
   }
 
   /**
@@ -316,6 +350,7 @@ export class BehaviorEngine {
   async buildFromMatrix(blocks, origin) {
     if (!Array.isArray(blocks) || blocks.length === 0) return false;
     this.currentAction = "build";
+    this._aborted = false; // 新一次建造开始时复位中断标志
 
     const oy = origin?.y ?? this.bot.entity?.position?.y ?? 0; // 站位地面层（不是目标块高度，高层块悬空走不到）
     const REACH = 4; // 放方块的最大距离（够得着就不导航，只挪一次覆盖一片）
@@ -324,6 +359,8 @@ export class BehaviorEngine {
     const failed = [];
 
     for (const b of blocks) {
+      // 新指令来了就中断建造
+      if (this._aborted) break;
       try {
         const targetVec = new Vec3(b.x, b.y, b.z);
 
