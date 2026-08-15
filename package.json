@@ -13,7 +13,6 @@
     "mineflayer": "^4.28.0",
     "mineflayer-navigate": "^0.0.10",
     "mineflayer-pathfinder": "^2.4.5",
-    "mineflayer-statemachine": "^1.7.0",
     "pinyin-pro": "^3.28.2",
     "ws": "^8.18.0"
   },

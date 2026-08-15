@@ -143,7 +143,7 @@ export class LocalMemory {
         max_tokens: 200,
         temperature: 0,
         tools,
-        tool_choice: "auto",
+        tool_choice: { type: "function", function: { name: "select_memories" } },
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -156,8 +156,13 @@ export class LocalMemory {
     const toolCalls = data.choices?.[0]?.message?.tool_calls ?? [];
     for (const call of toolCalls) {
       if (call?.function?.name === "select_memories") {
-        const args = JSON.parse(call.function.arguments);
-        return Array.isArray(args.relevant_ids) ? args.relevant_ids : [];
+        try {
+          const args = JSON.parse(call.function.arguments);
+          return Array.isArray(args.relevant_ids) ? args.relevant_ids : [];
+        } catch (err) {
+          console.error("[Memory] 解析 select_memories 参数失败:", err.message);
+          return [];
+        }
       }
     }
     return [];

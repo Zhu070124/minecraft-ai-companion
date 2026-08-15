@@ -7,7 +7,7 @@
 
 import { createServer } from "http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
-import { join, dirname, extname } from "path";
+import { join, dirname, extname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer } from "ws";
 import yaml from "js-yaml";
@@ -85,12 +85,14 @@ const server = createServer((req, res) => {
     filePath = join(LAUNCHER_DIR, url.pathname);
   }
 
-  // 安全：防止路径穿越
-  if (!filePath.startsWith(LAUNCHER_DIR)) {
+  // 安全：规范化后检查是否仍在 launcher 目录内（防路径穿越）
+  const resolvedPath = resolve(filePath);
+  if (!resolvedPath.startsWith(LAUNCHER_DIR + sep)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
   }
+  filePath = resolvedPath;
 
   try {
     const ext = extname(filePath);
@@ -405,7 +407,7 @@ function toMcUsername(name) {
 
 // ─── 启动 ───────────────────────────────────────────────────
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`\n  🎮 MC AI Companion v0.1.0`);
   console.log(`  Launcher: http://localhost:${PORT}`);
   console.log(`  API:      http://localhost:${PORT}/api/`);

@@ -90,6 +90,7 @@ export class EventRouter {
     this._lastReflectAt = 0;  // 上次反思时间戳（冷却用）
     this._reflectCooldown = 90000; // 反思冷却（90 秒，事件驱动 + 定时兜底共用）
     this._lastPlayerInteractionAt = Date.now(); // 上次玩家互动时间（冷场追踪，欲望派生用）
+    this._dailyTimer = null;   // 每日 tick 定时器
   }
 
   // ─── 生命周期 ─────────────────────────────────────────────
@@ -97,10 +98,18 @@ export class EventRouter {
   start() {
     if (this.timer) return;
     this._scheduleNext();
+    // 每日 tick：记仇逐日衰减 + 温度自然衰减（24h 一次，长期运行才生效）
+    if (!this._dailyTimer) {
+      this._dailyTimer = setInterval(() => {
+        this.temp.dailyTick();
+        console.log("[Agent] 每日 tick:", this.temp.describe());
+      }, 24 * 3600 * 1000);
+    }
   }
 
   stop() {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    if (this._dailyTimer) { clearInterval(this._dailyTimer); this._dailyTimer = null; }
   }
 
   _scheduleNext() {
@@ -412,11 +421,13 @@ export class EventRouter {
       if (reason === "autonomous" && !this._canSpeakNow()) {
         console.log("[Agent] 自主发言节流：距上次发言不足 2 分钟，闭嘴只做事");
       } else {
-        const safeReply = text.startsWith("/") ? text.replace(/^\/+/, "") : text;
-        this.bot.chat(safeReply);
-        this.broadcast("chat", { sender: this.soul.name, text: safeReply, direction: "out" });
-        this._pushLog({ type: "assistant", content: safeReply });
-        this.lastSpeech = Date.now();
+        const safeReply = this._sanitizeChat(text);
+        if (safeReply) {
+          this.bot.chat(safeReply);
+          this.broadcast("chat", { sender: this.soul.name, text: safeReply, direction: "out" });
+          this._pushLog({ type: "assistant", content: safeReply });
+          this.lastSpeech = Date.now();
+        }
       }
     }
   }
@@ -424,6 +435,33 @@ export class EventRouter {
   /** autonomous 发言是否已过 2 分钟冷却 */
   _canSpeakNow() {
     return Date.now() - this.lastSpeech >= SPEECH_INTERVAL;
+  }
+
+  /**
+   * 发送前清洗：剥离 mood 标签、拦截命令注入、违禁词兜底、限长
+   * @returns {string|null} 可安全发送的文本；null = 拦截不发
+   */
+  _sanitizeChat(text) {
+    // 1. 剥离 mood 标签（system prompt 要求最后一行 mood=xxx，但不该发到公屏）
+    let t = String(text ?? "").replace(/\n?mood=[a-z]+\s*$/i, "").trim();
+    if (!t) return null;
+    // 2. 只取第一行，限长 100 字
+    if (t.includes("\n")) t = t.split("\n")[0];
+    t = t.slice(0, 100);
+    // 3. 拦截以 / 开头的命令注入（防止 LLM 输出 /kick /op /stop 等）
+    if (t.startsWith("/")) {
+      console.warn("[Safety] 拦截命令注入:", t);
+      return null;
+    }
+    // 4. 违禁词兜底（命中则替换成中性回应）
+    const forbidden = this.soul?.speech?.forbidden ?? [];
+    for (const w of forbidden) {
+      if (w && t.includes(w)) {
+        console.warn("[Safety] 命中违禁词:", w);
+        return "……";
+      }
+    }
+    return t;
   }
 
   /** 从情绪态确定性派生出「内心欲望」（倾向不是命令；空数组=内心平静） */

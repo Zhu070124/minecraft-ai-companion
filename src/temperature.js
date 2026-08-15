@@ -160,10 +160,7 @@ export class TemperatureEngine {
     this.cleanGrudges();
     // 每条活跃记仇每天降温 dailyDecay 点
     const grudgePenalty = this.activeGrudges.reduce((sum, g) => sum + g.dailyDecay, 0);
-    // 缩短记仇剩余时间
-    for (const g of this.activeGrudges) {
-      g.expiresAt -= 86400_000; // 减少一天
-    }
+    // 注：记仇到期由 cleanGrudges/grudges 的 Date.now() > expiresAt 判断，这里不再手动改 expiresAt
     this.value = Math.max(0, Math.min(100, this.value - grudgePenalty));
     // 自然衰减（从事件表取，不经过 apply 避免递归）
     const decay = this.events["daily_decay"] ?? -2;

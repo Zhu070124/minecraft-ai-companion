@@ -113,11 +113,18 @@ export function createBot(opts) {
       // 礼物检测：玩家在 bot 附近丢出物品 → 送礼
       // 必须用 mineflayer 内置的 itemDrop 事件（此时 metadata 已加载，getDroppedItem 才可用）；
       // 不能用 entitySpawn —— spawn 包先到、metadata 后到，那时 getDroppedItem() 返回 null
-      const processedItemIds = new Set(); // 去重：itemDrop 对同一实体可能触发多次
+      const processedItemIds = new Map(); // id -> 时间戳（防无限增长，定期清理）
       bot.on("itemDrop", (entity) => {
+        const now = Date.now();
+        // 定期清理 60 秒前的旧条目
+        if (processedItemIds.size > 500) {
+          for (const [id, ts] of processedItemIds) {
+            if (now - ts > 60000) processedItemIds.delete(id);
+          }
+        }
         // 同一实体只处理一次
         if (processedItemIds.has(entity.id)) return;
-        processedItemIds.add(entity.id);
+        processedItemIds.set(entity.id, now);
         // 只在 bot 附近检测（8 格内，留足 spawn 抖动余量）
         if (!bot.entity || entity.position.distanceTo(bot.entity.position) > 8) return;
         // 找到最近的玩家（不是 bot 自己）
