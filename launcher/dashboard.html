@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仪表盘 — MC AI 队友</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+<div class="container dashboard-container">
+
+  <div class="dash-header">
+    <h2>👁 实时仪表盘</h2>
+    <span class="status-dot" id="bot-status-dot">●</span>
+    <span id="bot-status-text">离线</span>
+    <a href="index.html" class="back-link">配置</a>
+  </div>
+
+  <!-- 信息卡片 -->
+  <div class="dash-cards">
+    <!-- 温度计 -->
+    <div class="dash-card" id="temp-card">
+      <div class="card-title">❤️ 温度</div>
+      <div class="temp-bar-bg">
+        <div class="temp-bar-fill" id="temp-bar" style="width:50%"></div>
+      </div>
+      <div class="temp-label">
+        <span id="temp-stage">平常</span>
+        <span id="temp-value">50</span>
+      </div>
+    </div>
+
+    <!-- 当前人格 -->
+    <div class="dash-card">
+      <div class="card-title">🎭 人格</div>
+      <div class="card-value" id="dash-preset">—</div>
+    </div>
+
+    <!-- 名字 -->
+    <div class="dash-card">
+      <div class="card-title">📛 名字</div>
+      <div class="card-value" id="dash-name">—</div>
+    </div>
+  </div>
+
+  <!-- 记仇表 -->
+  <div class="dash-section">
+    <h3>📋 记仇中</h3>
+    <div id="grudge-list" class="empty-state">无记仇 — 你还没有惹他</div>
+  </div>
+
+  <!-- 聊天记录 -->
+  <div class="dash-section">
+    <h3>💬 对话</h3>
+    <div id="chat-log">
+      <div class="empty-state">还没有对话</div>
+    </div>
+  </div>
+
+  <!-- 事件流 -->
+  <div class="dash-section">
+    <h3>📊 事件</h3>
+    <div id="event-log">
+      <div class="empty-state">等待事件…</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── WebSocket 连接 ─────────────────────────────────────────
+const ws = new WebSocket(`ws://${location.hostname}:8848`);
+ws.onmessage = (e) => {
+  const { type, data } = JSON.parse(e.data);
+
+  if (type === "status") {
+    updateStatus(data);
+  } else if (type === "chat") {
+    addChat(data);
+  } else if (type === "event" || type === "behavior") {
+    addEvent(type, data);
+  }
+};
+
+ws.onclose = () => {
+  document.getElementById("bot-status-dot").className = "status-offline";
+  document.getElementById("bot-status-text").textContent = "连接断开";
+};
+
+// ─── 状态更新 ───────────────────────────────────────────────
+
+function updateStatus(data) {
+  const online = data.botOnline;
+  document.getElementById("bot-status-dot").className = online ? "status-online" : "status-offline";
+  document.getElementById("bot-status-text").textContent = online ? "在线" : "离线";
+
+  if (data.config) {
+    document.getElementById("dash-name").textContent = data.config.name;
+    document.getElementById("dash-preset").textContent = data.config.preset ?? "自定义";
+  }
+
+  if (data.temperature) {
+    const temp = data.temperature;
+    document.getElementById("temp-value").textContent = Math.round(temp.value);
+    document.getElementById("temp-bar").style.width = temp.value + "%";
+
+    // 温度条颜色
+    const bar = document.getElementById("temp-bar");
+    bar.className = "temp-bar-fill";
+    if (temp.value < 21) bar.classList.add("cold");
+    else if (temp.value < 41) bar.classList.add("cool");
+    else if (temp.value < 61) bar.classList.add("neutral");
+    else if (temp.value < 81) bar.classList.add("warm");
+    else bar.classList.add("attached");
+
+    // 阶段标签
+    const stages = ["冷漠", "疏离", "平常", "亲近", "依恋"];
+    const idx = Math.min(4, Math.floor(temp.value / 20));
+    document.getElementById("temp-stage").textContent = stages[idx];
+
+    // 记仇
+    const grudgeList = document.getElementById("grudge-list");
+    if (temp.activeGrudges && temp.activeGrudges.length > 0) {
+      grudgeList.innerHTML = temp.activeGrudges.map(g =>
+        `<div class="grudge-item">💢 ${g.label} — ${new Date(g.expiresAt).toLocaleDateString()} 到期</div>`
+      ).join("");
+    } else {
+      grudgeList.innerHTML = '<div class="empty-state">无记仇 — 你还没有惹他</div>';
+    }
+  }
+}
+
+function addChat(data) {
+  const log = document.getElementById("chat-log");
+  if (log.querySelector(".empty-state")) log.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = `chat-line ${data.direction === "in" ? "in" : "out"}`;
+  const moodTag = data.mood ? ` <span class="mood-tag">[${data.mood}]</span>` : "";
+  div.innerHTML = `<span class="chat-sender">${data.sender}:</span> ${data.text}${moodTag}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function addEvent(type, data) {
+  const log = document.getElementById("event-log");
+  if (log.querySelector(".empty-state")) log.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "event-line";
+  const time = new Date().toLocaleTimeString();
+  const icon = type === "behavior" ? "🤖" : "📌";
+  div.textContent = `${time} ${icon} ${data.action ?? data.type ?? JSON.stringify(data)}`;
+  log.appendChild(div);
+  if (log.children.length > 50) log.firstChild.remove();
+}
+</script>
+</body>
+</html>

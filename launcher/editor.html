@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOUL 编辑器 — MC AI 队友</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="editor-page">
+<div class="container editor-container">
+
+  <a href="index.html" class="back-link">← 返回</a>
+  <h1>🎨 高级编辑</h1>
+  <p class="sub">从预设出发，或者从零打造你的 AI 队友</p>
+
+  <!-- 预设选择 -->
+  <div class="editor-section">
+    <label>基于预设（可选）</label>
+    <select id="preset-select">
+      <option value="">—— 从零开始 ——</option>
+      <option value="tsundere">🎭 傲娇</option>
+      <option value="sweet">🌸 甜妹</option>
+      <option value="cold">❄️ 高冷</option>
+      <option value="warm">🔥 暖心</option>
+    </select>
+    <button class="btn-small" id="load-preset">加载预设</button>
+  </div>
+
+  <!-- YAML 编辑器 -->
+  <div class="editor-section">
+    <div class="editor-header">
+      <label>SOUL.yaml</label>
+      <span class="hint">你可以从加载的预设上修改，或直接在下面自由编辑</span>
+    </div>
+    <textarea id="yaml-editor" spellcheck="false"></textarea>
+  </div>
+
+  <!-- 预览与保存 -->
+  <div class="editor-section">
+    <div class="editor-actions">
+      <button class="btn-primary" id="save-soul">💾 保存并用于配置</button>
+      <button class="btn-secondary" id="export-yaml">📥 导出 YAML</button>
+    </div>
+    <p id="editor-status" class="hint"></p>
+  </div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

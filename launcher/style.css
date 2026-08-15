@@ -1,0 +1,437 @@
+/* ══════════════════════════════════════════════════════════════════
+   MC AI Companion — Launcher UI
+   Design: 马卡龙低饱和，动漫风格，暗色底色 + 暖色点缀
+   ══════════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg:       #1a1a2e;
+  --surface:  #25253e;
+  --surface2: #2e2e4a;
+  --text:     #e0dce8;
+  --text-dim: #9a95a8;
+  --accent:   #c4a0ff;
+  --accent2:  #ff9eb5;
+  --warm:     #ffb88c;
+  --success:  #7ecba1;
+  --danger:   #ff6b7a;
+  --border:   #3d3a5c;
+  --radius:   12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 520px;
+  width: 100%;
+}
+
+/* ─── 步骤指示器 ──────────────────────────────────────────── */
+
+.steps {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .85rem;
+  color: var(--text-dim);
+  transition: color .3s;
+}
+.step span {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .8rem;
+  font-weight: 600;
+  transition: all .3s;
+}
+.step.active { color: var(--accent); }
+.step.active span { background: var(--accent); color: var(--bg); }
+.step.done { color: var(--success); }
+.step.done span { background: var(--success); color: var(--bg); }
+
+/* ─── 面板 ────────────────────────────────────────────────── */
+
+.panel { text-align: center; }
+.panel.hidden { display: none; }
+
+.hero-icon { font-size: 4rem; margin-bottom: 1rem; }
+
+h1 { font-size: 1.8rem; font-weight: 600; margin-bottom: .5rem; }
+h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; }
+.sub { color: var(--text-dim); margin-bottom: 2rem; }
+.hint { color: var(--text-dim); font-size: .8rem; margin-top: .5rem; }
+
+/* ─── 输入组 ──────────────────────────────────────────────── */
+
+.input-group {
+  display: flex;
+  gap: .5rem;
+  justify-content: center;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .7rem 1rem;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color .3s;
+  width: 100%;
+}
+input:focus { border-color: var(--accent); }
+
+/* ─── 按钮 ────────────────────────────────────────────────── */
+
+button, .btn-primary, .btn-secondary, .btn-small, .link-btn {
+  cursor: pointer;
+  font-size: .95rem;
+  border: none;
+  border-radius: var(--radius);
+  padding: .7rem 1.5rem;
+  transition: all .2s;
+  font-family: inherit;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) { background: #d4b8ff; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+}
+.btn-secondary:hover { background: var(--border); }
+
+.btn-small {
+  background: var(--surface2);
+  color: var(--text);
+  padding: .4rem 1rem;
+  font-size: .85rem;
+}
+.btn-small:hover { background: var(--border); }
+
+.link-btn {
+  background: none;
+  color: var(--accent);
+  padding: .5rem;
+  text-decoration: underline;
+}
+.link-btn:hover { color: #d4b8ff; }
+
+/* ─── 人格卡片网格 ────────────────────────────────────────── */
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.preset-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  cursor: pointer;
+  transition: all .3s;
+  text-align: left;
+}
+.preset-card:hover { border-color: var(--accent); }
+.preset-card.selected { border-color: var(--accent); background: var(--surface2); }
+
+.preset-emoji { font-size: 2rem; margin-bottom: .5rem; }
+.preset-label { font-weight: 600; font-size: 1rem; margin-bottom: .3rem; }
+.preset-personality { font-size: .8rem; color: var(--text-dim); margin-bottom: .5rem; }
+.preset-preview {
+  font-size: .85rem;
+  color: var(--accent2);
+  font-style: italic;
+}
+
+/* ─── 编辑器入口 ──────────────────────────────────────────── */
+
+.editor-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  margin: 1.5rem 0;
+  padding: .8rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: .85rem;
+  color: var(--text-dim);
+}
+
+.step-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+/* ─── 完成页 ──────────────────────────────────────────────── */
+
+.done-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+.done-persona { margin-bottom: .5rem; font-size: 1rem; }
+.done-label { color: var(--text-dim); }
+.done-preview {
+  font-style: italic;
+  color: var(--accent2);
+  font-size: 1.1rem;
+}
+
+.done-instructions { text-align: left; margin-bottom: 2rem; }
+.instruction {
+  display: flex;
+  gap: .8rem;
+  align-items: baseline;
+  margin-bottom: .8rem;
+  font-size: .9rem;
+}
+.instruction .num {
+  width: 24px; height: 24px;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.done-actions {
+  display: flex;
+  gap: .8rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+#start-status { margin-top: 1rem; font-size: .85rem; }
+
+/* ─── 弹窗 ────────────────────────────────────────────────── */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal.hidden { display: none; }
+.modal-content {
+  background: var(--surface);
+  padding: 2rem;
+  border-radius: var(--radius);
+  max-width: 400px;
+  width: 90%;
+}
+.modal-content h3 { margin-bottom: 1rem; }
+.modal-content label {
+  display: block;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+  color: var(--text-dim);
+}
+.modal-content label input { margin-top: .3rem; }
+.modal-actions { display: flex; gap: .8rem; justify-content: flex-end; margin-top: 1.5rem; }
+
+/* ─── 编辑器页 ────────────────────────────────────────────── */
+
+.editor-page, .dashboard-page {
+  align-items: flex-start;
+}
+.editor-container { max-width: 700px; }
+.back-link {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: .9rem;
+  display: inline-block;
+  margin-bottom: 1rem;
+}
+.back-link:hover { color: var(--accent); }
+
+.editor-section {
+  margin-bottom: 1.5rem;
+}
+.editor-section > label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: .5rem;
+}
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: .5rem;
+}
+.editor-section select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: .5rem 1rem;
+  border-radius: var(--radius);
+  font-size: .9rem;
+  margin-right: .5rem;
+}
+
+#yaml-editor {
+  width: 100%;
+  height: 450px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 1rem;
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: .85rem;
+  resize: vertical;
+  outline: none;
+}
+#yaml-editor:focus { border-color: var(--accent); }
+
+.editor-actions { display: flex; gap: .8rem; }
+
+/* ─── 仪表盘 ──────────────────────────────────────────────── */
+
+.dashboard-container { max-width: 600px; }
+
+.dash-header {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  margin-bottom: 2rem;
+}
+.dash-header h2 { margin: 0; flex: 1; }
+.status-dot {
+  font-size: 1.2rem;
+  animation: pulse 1.5s infinite;
+}
+.status-online { color: var(--success); }
+.status-offline { color: var(--text-dim); animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .3; }
+}
+
+.dash-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.dash-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  text-align: center;
+}
+.card-title { font-size: .8rem; color: var(--text-dim); margin-bottom: .5rem; }
+.card-value { font-size: 1.2rem; font-weight: 600; }
+
+/* 温度条 */
+.temp-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  margin: .5rem 0;
+  overflow: hidden;
+}
+.temp-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+  transition: width .5s, background .5s;
+}
+.temp-bar-fill.cold { background: #6b8cff; }
+.temp-bar-fill.cool { background: #7ec8e3; }
+.temp-bar-fill.warm { background: var(--warm); }
+.temp-bar-fill.attached { background: var(--accent2); }
+.temp-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: .8rem;
+}
+
+.dash-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+}
+.dash-section h3 { font-size: .95rem; margin-bottom: .8rem; color: var(--text-dim); }
+
+.chat-line {
+  padding: .4rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: .85rem;
+}
+.chat-line.in .chat-sender { color: var(--warm); }
+.chat-line.out .chat-sender { color: var(--accent); }
+.mood-tag { font-size: .75rem; color: var(--text-dim); }
+
+.event-line {
+  padding: .3rem 0;
+  font-size: .8rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.grudge-item {
+  padding: .5rem 0;
+  font-size: .85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.empty-state {
+  color: var(--text-dim);
+  font-size: .85rem;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+/* ─── 响应式 ──────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .preset-grid { grid-template-columns: 1fr; }
+  .dash-cards { grid-template-columns: 1fr; }
+  .steps { gap: 1rem; }
+}

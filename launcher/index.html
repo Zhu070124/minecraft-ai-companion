@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MC AI 队友 — 配置</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+
+  <!-- 步骤指示器 -->
+  <div class="steps">
+    <div class="step active" data-step="1"><span>1</span> 起名</div>
+    <div class="step" data-step="2"><span>2</span> 选人格</div>
+    <div class="step" data-step="3"><span>3</span> 完成</div>
+  </div>
+
+  <!-- ════ 步骤 1：起名 ════ -->
+  <div class="panel" id="step-1">
+    <div class="hero-icon">🎮</div>
+    <h1>给你的 Minecraft AI 队友<br>起个名字</h1>
+    <p class="sub">他会记住这个名字，也会记住你们之间的一切</p>
+    <div class="input-group">
+      <input type="text" id="name-input" placeholder="输入名字…" maxlength="16" autofocus>
+      <button id="to-step-2" disabled>下一步 →</button>
+    </div>
+    <p class="hint" id="name-hint"></p>
+  </div>
+
+  <!-- ════ 步骤 2：选人格 ════ -->
+  <div class="panel hidden" id="step-2">
+    <h2>选择「<span id="show-name">泡芙</span>」的人格</h2>
+    <div class="preset-grid" id="preset-grid">
+      <!-- JS 动态填充 -->
+    </div>
+    <div class="editor-cta">
+      <span>这些都不够像你想象中的那个人？</span>
+      <a href="editor.html" class="link-btn" id="editor-link">🎨 高级编辑 → 自己捏人</a>
+    </div>
+    <div class="step-actions">
+      <button class="btn-secondary" id="back-to-1">← 返回</button>
+      <button class="btn-primary" id="confirm-persona" disabled>选定这个人格 →</button>
+    </div>
+  </div>
+
+  <!-- ════ 步骤 3：完成 ════ -->
+  <div class="panel hidden" id="step-3">
+    <div class="hero-icon">✨</div>
+    <h2><span id="done-name">泡芙</span> 准备好了</h2>
+    <div class="done-card">
+      <div class="done-persona">
+        <span class="done-label">人格：</span>
+        <span id="done-preset">傲娇</span>
+      </div>
+      <div class="done-preview" id="done-preview">
+        "……别死了啊笨蛋。"
+      </div>
+    </div>
+    <div class="done-instructions">
+      <div class="instruction">
+        <span class="num">1</span>
+        <span>打开 Minecraft，进入你的单人世界</span>
+      </div>
+      <div class="instruction">
+        <span class="num">2</span>
+        <span>打开世界到局域网（Esc → 对局域网开放 → 记下端口号）</span>
+      </div>
+      <div class="instruction">
+        <span class="num">3</span>
+        <span>按 T 打开聊天，直接和 <strong id="done-name2">泡芙</strong> 说话</span>
+      </div>
+    </div>
+    <div class="done-actions">
+      <button class="btn-primary" id="start-bot">启动 Bot</button>
+      <button class="btn-secondary" id="reconfigure">重新捏人</button>
+      <a href="dashboard.html" class="link-btn" target="_blank">👁 打开仪表盘</a>
+    </div>
+    <div id="start-status"></div>
+  </div>
+
+</div>
+
+<!-- MC 连接配置弹窗 -->
+<div class="modal hidden" id="mc-config-modal">
+  <div class="modal-content">
+    <h3>连接 Minecraft</h3>
+    <label>服务器地址
+      <input type="text" id="mc-host" value="localhost" placeholder="localhost">
+    </label>
+    <label>端口
+      <input type="number" id="mc-port" value="25565" placeholder="25565">
+    </label>
+    <p class="hint">单人世界：Esc → 对局域网开放 → 复制端口号填入上方</p>
+    <label>LLM API Key <span class="hint">(DeepSeek)</span>
+      <input type="password" id="llm-key" placeholder="sk-...">
+    </label>
+    <div class="modal-actions">
+      <button class="btn-primary" id="confirm-start">确认启动</button>
+      <button class="btn-secondary" id="cancel-start">取消</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
