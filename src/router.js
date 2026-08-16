@@ -339,7 +339,10 @@ export class EventRouter {
       if (insight && !/^无[。.]?$/.test(insight)) {
         const dup = self.some((s) => s.content === insight);
         if (!dup) {
-          await this.memory.remember(insight, { lens: "self", confidence: "inferred", priority: "P2" });
+          await this.memory.remember(insight, {
+            lens: "self", confidence: "inferred", priority: "P2",
+            links: context?.linkTo ? [context.linkTo] : [], // 认知关联来源事件（因果链）
+          });
           console.log("[Agent] 反思沉淀:", insight);
         }
         if (delta !== 0) {
@@ -628,11 +631,12 @@ export class EventRouter {
     this._lastPlayerInteractionAt = Date.now();
     const delta = this.temp.apply("gift_received");
     this._pushEvent("gift", { from: username, item: itemName });
-    this.memory.remember(`${username} 送了${this.soul.name}一个${itemName}`, {
+    const giftMem = await this.memory.remember(`${username} 送了${this.soul.name}一个${itemName}`, {
       lens: "general", confidence: "observed", priority: "P1",
-    }).catch(() => {});
+    }).catch(() => null);
     this.broadcast("event", { type: "gift_received", from: username, item: itemName, tempDelta: delta });
-    this._triggerReflect({ trigger: `${username} 送了我一个 ${itemName}` });
+    // linkTo：把送礼事件记忆的 id 传给反思，让「认知」关联「来源事件」（因果链）
+    this._triggerReflect({ trigger: `${username} 送了我一个 ${itemName}`, linkTo: giftMem?.id });
     await this.decide("gift", { from: username, item: itemName });
   }
 

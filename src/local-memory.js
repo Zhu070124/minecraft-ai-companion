@@ -26,6 +26,8 @@ export class LocalMemory {
     this.agentName = config.agentName ?? "mc-companion";
     this.path = config.path ?? DEFAULT_PATH;
     this.maxCandidates = config.maxCandidates ?? 30; // 检索候选上限（太旧的不参与）
+    this.maxSelfEntries = config.maxSelfEntries ?? 20; // self 认知上限（自我认知是演化的，不无限累积）
+    this.forgetAfterDays = config.forgetAfterDays ?? 14; // 旧且未被使用的非重要记忆，超过此天数被遗忘
     this._cache = null; // 内存缓存，避免每次读写全量磁盘 JSON
   }
 
@@ -59,19 +61,37 @@ export class LocalMemory {
    */
   async remember(content, opts = {}) {
     const store = this._load();
+    const lens = opts.lens ?? "general";
+
+    // ── self 治理：相似去重 + 上限（自我认知是演化的，不是无限累积）──
+    if (lens === "self") {
+      const selfEntries = store.memories.filter((m) => m.lens === "self");
+      // 相似去重（bigram Dice 系数 > 0.6 视为已存在，不写）
+      if (selfEntries.some((m) => this._similar(m.content, content) > 0.6)) {
+        return { id: null, status: "duplicate" };
+      }
+      // 超上限删最旧一条（旧的自我认知被新认知覆盖）
+      if (selfEntries.length >= this.maxSelfEntries) {
+        const oldestIdx = store.memories.findIndex((m) => m.lens === "self");
+        if (oldestIdx >= 0) store.memories.splice(oldestIdx, 1);
+      }
+    }
+
     const entry = {
       id: `m_${Date.now()}_${store.memories.length}`,
       content: content.slice(0, 500),
       source: this.agentName,
-      lens: opts.lens ?? "general",
+      lens,
       confidence: opts.confidence ?? "observed",
       priority: opts.priority ?? "P1",
       tags: opts.tags ?? [],
+      links: opts.links ?? [], // 关联记忆 id（认知⇄事件 的因果链）
+      access_count: 0,
+      last_accessed: null,
       created_at: new Date().toISOString(),
     };
     store.memories.push(entry);
-    // 控制总量，太旧的丢弃（放宽到 1000 条，长期陪伴不失忆）
-    if (store.memories.length > 1000) store.memories = store.memories.slice(-1000);
+    this._gc(store); // 懒 GC：遗忘「旧且未被使用」的低价值记忆（真人会忘）
     this._save(store);
     return { id: entry.id, status: "recorded" };
   }
@@ -88,15 +108,36 @@ export class LocalMemory {
 
     if (candidates.length === 0) return [];
 
+    let picked;
     try {
       const relevantIds = await this._llmRetrieve(query, candidates);
-      const picked = candidates.filter(m => relevantIds.includes(m.id));
-      return picked.length > 0 ? picked : this._keywordSearch(query, candidates);
+      picked = candidates.filter(m => relevantIds.includes(m.id));
+      if (picked.length === 0) picked = this._keywordSearch(query, candidates);
     } catch (err) {
       // LLM 检索失败 → 降级关键词匹配
       console.error("[Memory] LLM 检索失败，降级关键词:", err.message);
-      return this._keywordSearch(query, candidates);
+      picked = this._keywordSearch(query, candidates);
     }
+
+    // 访问追踪：命中即 +1 并更新最后访问时间（供 GC 判断「是否还在用」）
+    const nowIso = new Date().toISOString();
+    for (const m of picked) {
+      m.access_count = (m.access_count ?? 0) + 1;
+      m.last_accessed = nowIso;
+    }
+    this._save(store);
+
+    // 一跳扩散：带出命中记忆 link 的关联记忆（认知 ⇄ 事件的因果链）
+    const result = [...picked];
+    const seen = new Set(picked.map((m) => m.id));
+    for (const m of picked) {
+      for (const linkId of (m.links ?? [])) {
+        if (typeof linkId !== "string" || seen.has(linkId)) continue;
+        const linked = store.memories.find((x) => x.id === linkId);
+        if (linked) { result.push(linked); seen.add(linkId); }
+      }
+    }
+    return result;
   }
 
   /** 按 lens 拉画像 */
@@ -179,5 +220,67 @@ export class LocalMemory {
     return candidates
       .filter(m => m.content.toLowerCase().includes(q) || (m.tags ?? []).some(t => String(t).toLowerCase().includes(q)))
       .slice(0, 5);
+  }
+
+  // ─── 生命周期：遗忘（真人会忘，记忆不无限累积）────────────────
+
+  /**
+   * 懒 GC：遗忘「旧 + 从未被使用 + 非重要」的记忆
+   * 保留：self（有专门治理）、P0（重要）、被 link 引用、新鲜期内、被访问过的
+   */
+  _gc(store, now = Date.now()) {
+    const DAY = 24 * 60 * 60 * 1000;
+    const MAX = 1000;
+
+    // 被 link 引用的 id（删了会导致认知的因果链悬空）
+    const linkedIds = new Set();
+    for (const m of store.memories) {
+      for (const l of (m.links ?? [])) if (typeof l === "string") linkedIds.add(l);
+    }
+
+    const before = store.memories.length;
+
+    // 1. 遗忘：旧 + 从未被访问 + 非 P0 + 非 self + 未被 link
+    store.memories = store.memories.filter((m) => {
+      if (m.lens === "self") return true;                 // self 有专门治理
+      if (m.priority === "P0") return true;               // 重要永不自动遗忘
+      if (linkedIds.has(m.id)) return true;               // 被因果链引用，不删
+      const age = now - new Date(m.created_at).getTime();
+      if (age < this.forgetAfterDays * DAY) return true;  // 新鲜期内不忘
+      if ((m.access_count ?? 0) >= 2) return true;        // 被用过的留着
+      return false;                                       // 旧 + 未用 + 非重要 → 遗忘
+    });
+
+    // 2. 硬上限兜底：仍超 MAX 就从最旧开始丢（跳过 self 和被 link 的）
+    if (store.memories.length > MAX) {
+      let overflow = store.memories.length - MAX;
+      for (let i = 0; i < store.memories.length && overflow > 0; i++) {
+        const m = store.memories[i];
+        if (m.lens === "self" || linkedIds.has(m.id)) continue;
+        store.memories.splice(i, 1);
+        i--; overflow--;
+      }
+    }
+
+    const forgotten = before - store.memories.length;
+    if (forgotten > 0) {
+      console.log(`[Memory] 遗忘 ${forgotten} 条旧且未被使用的记忆`);
+    }
+  }
+
+  // ─── 相似度：bigram Dice 系数（用于 self 相似去重）────────────
+
+  _similar(a, b) {
+    const bigrams = (s) => {
+      const set = new Set();
+      for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+      return set;
+    };
+    const A = bigrams(a ?? "");
+    const B = bigrams(b ?? "");
+    if (A.size === 0 || B.size === 0) return 0;
+    let inter = 0;
+    for (const g of A) if (B.has(g)) inter++;
+    return (2 * inter) / (A.size + B.size);
   }
 }
