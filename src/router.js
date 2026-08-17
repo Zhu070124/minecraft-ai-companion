@@ -50,6 +50,7 @@ const REFLECT_TOOL = [
         properties: {
           insight: { type: "string", description: "一句具体朴素的自我认知（关于你或你和玩家的关系），不超过20字。禁止元反思（禁止反思「反思」本身）、禁止抽象空转。没有新的认识就填空字符串。" },
           temperature_delta: { type: "integer", description: "情感变化：正数=更亲近/依赖，负数=更疏远，0=无变化，范围 -5 到 +5" },
+          conflict: { type: "string", enum: ["consistent", "irrelevant", "conflict"], description: "这条认知和你【已有的自我认知】的关系：一致(consistent)、无关(irrelevant)、冲突(conflict)。和旧认知矛盾就选 conflict。" },
         },
         required: ["insight", "temperature_delta"],
       },
@@ -338,18 +339,20 @@ export class EventRouter {
       const insight = (args.insight ?? "").trim().slice(0, 60); // 硬截断，防长篇空转
       const rawDelta = Number(args.temperature_delta);
       const delta = Number.isFinite(rawDelta) ? rawDelta : 0;
+      // 认知冲突：和旧认知矛盾的新认知，降级为 conflicted，且不反哺温度（矛盾不立即改变情感，等后续事件确认）
+      const conflicted = args.conflict === "conflict";
 
       // 只有产出具体 insight 才写记忆 + 反哺温度（空 insight = 没新认识 = 不动情绪）
       if (insight && !/^无[。.]?$/.test(insight)) {
         const dup = self.some((s) => s.content === insight);
         if (!dup) {
           await this.memory.remember(insight, {
-            lens: "self", confidence: "inferred", priority: "P2",
+            lens: "self", confidence: conflicted ? "conflicted" : "inferred", priority: "P2",
             links: context?.linkTo ? [context.linkTo] : [], // 认知关联来源事件（因果链）
           });
-          console.log("[Agent] 反思沉淀:", insight);
+          console.log("[Agent] 反思沉淀:", insight, conflicted ? "（与旧认知冲突，暂不反哺温度）" : "");
         }
-        if (delta !== 0) {
+        if (!conflicted && delta !== 0) {
           const clamped = Math.max(-5, Math.min(5, delta));
           const oldStage = this.temp.stage.id;
           this.temp.nudge(clamped);
@@ -438,7 +441,7 @@ export class EventRouter {
           const unfinishedText = unfinished.length > 0
             ? unfinished.slice(0, 5).map((m) => `- ${m.content}`).join("\n")
             : "";
-          return `\n[你此刻的内心]\n${desireText}\n\n[你对自己的了解]\n${selfText}${unfinishedText ? `\n\n[你惦记着但还没做成的事]\n${unfinishedText}` : ""}\n\n[你的念头如何驱动行动]\n你不是"该做什么就做什么"的工具。你的动作应该从上面那些念头里长出来——想做某件事，是因为某个念头让你想为${this._playerName()}做点什么、或为自己做点什么。把念头变成动作的理由，而不是机械地找事做。如果几个念头在打架（比如既想陪他又想躲起来），不要干脆利落地选一个——先在心里纠结一下，再勉强选一个，甚至可以带着点不甘心。\n\n[当前动作]\n你正在：${this.currentAction}\n\n[现在]\n这是你的自主时刻。根据内心的倾向和当前状态自己判断该做什么。如果你正在做一件有意义的事，不要轻易 stop 打断它，除非有更重要的事（危险、玩家明确叫你）。内心平静就安静待着。\n\n[发言节奏]\n${speakHint}`;
+          return `\n[你此刻的内心]\n${desireText}\n\n[你对自己的了解]\n${selfText}${unfinishedText ? `\n\n[你惦记着但还没做成的事]\n${unfinishedText}` : ""}\n\n[你的念头如何驱动行动]\n你不是"该做什么就做什么"的工具。你的动作应该从上面那些念头里长出来——想做某件事，是因为某个念头让你想为${this._playerName()}做点什么、或为自己做点什么。把念头变成动作的理由，而不是机械地找事做。如果几个念头轻微冲突，干脆选一个就行，别为了纠结而纠结——纠结是有成本的，只有真正重要的事（安全、关系、承诺）才值得你内心挣扎一下，甚至可以带着点不甘心。\n\n[当前动作]\n你正在：${this.currentAction}\n\n[现在]\n这是你的自主时刻。根据内心的倾向和当前状态自己判断该做什么。如果你正在做一件有意义的事，不要轻易 stop 打断它，除非有更重要的事（危险、玩家明确叫你）。内心平静就安静待着。\n\n[发言节奏]\n${speakHint}`;
         })()
       : "";
 

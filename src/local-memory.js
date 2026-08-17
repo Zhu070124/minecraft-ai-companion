@@ -70,10 +70,13 @@ export class LocalMemory {
       if (selfEntries.some((m) => this._similar(m.content, content) > 0.6)) {
         return { id: null, status: "duplicate" };
       }
-      // 超上限删最旧一条（旧的自我认知被新认知覆盖）
+      // 超上限一次性清到 maxSelfEntries-1，为新写入腾位（否则历史累积清不掉）
       if (selfEntries.length >= this.maxSelfEntries) {
-        const oldestIdx = store.memories.findIndex((m) => m.lens === "self");
-        if (oldestIdx >= 0) store.memories.splice(oldestIdx, 1);
+        const toDelete = selfEntries.length - (this.maxSelfEntries - 1);
+        for (let i = 0; i < toDelete; i++) {
+          const oldestIdx = store.memories.findIndex((m) => m.lens === "self");
+          if (oldestIdx >= 0) store.memories.splice(oldestIdx, 1);
+        }
       }
     }
 
