@@ -321,10 +321,14 @@ export class EventRouter {
       const triggerText = context?.trigger ? `\n【触发这次反思的事】\n${context.trigger}` : "";
       // 没有任何近期经历可反思就跳过（避免空转）
       if (recent.length === 0 && !context?.trigger) return;
+      // 已有的自我认知：喂给反思，让新认知跟旧认知「协商」而非凭空生成（认知抵抗）
+      const selfText = self.length > 0
+        ? self.slice(0, 8).map((s) => `- ${s.content}`).join("\n")
+        : "- （还没有稳定的自我认知）";
       const messages = [
-        { role: "system", content: `你是${this.soul.name}。回顾刚刚发生的事，沉淀一条具体的自我认知。调用 record_reflection 工具。` },
+        { role: "system", content: `你是${this.soul.name}。回顾刚刚发生的事，也回想你为什么会那么做、你在意的是什么，沉淀一条具体的自我认知（关于你是谁、你在意什么、你的动机）。调用 record_reflection 工具。` },
         { role: "user", content:
-          `【反思时刻】${triggerText}\n最近发生的事：\n${recent.join("\n") || "- （还没发生什么）"}` },
+          `【你已有的自我认知】\n${selfText}\n\n【反思时刻】${triggerText}\n最近发生的事：\n${recent.join("\n") || "- （还没发生什么）"}\n\n回想这些事的时候，想一想：你当时为什么会那么做？你的在意和动机是什么？新发生的事，和你已有的认知，有没有冲突？如果有，不要把旧的认知丢掉——把矛盾本身留下来（比如「我不相信他了」和「可他以前救过我」可以同时存在）。` },
       ];
       const { toolCalls } = await this._callLLM(messages, { tools: REFLECT_TOOL });
       const call = toolCalls?.find((c) => c.function?.name === "record_reflection");
@@ -384,7 +388,11 @@ export class EventRouter {
     let selfUnderstanding = [];
     try { selfUnderstanding = await this.memory.profile("self"); } catch { /* ignore */ }
 
-    return { reason, data, world, tempState, grudges, memories, recentEvents, selfUnderstanding };
+    // 未满足（想做没做成的事，牵挂）
+    let unfinished = [];
+    try { unfinished = await this.memory.profile("unfinished"); } catch { /* ignore */ }
+
+    return { reason, data, world, tempState, grudges, memories, recentEvents, selfUnderstanding, unfinished };
   }
 
   _buildMessages(perception) {
@@ -418,9 +426,19 @@ export class EventRouter {
       ? (() => {
           const desires = this._deriveDesires();
           const desireText = desires.length > 0
-            ? desires.map((d) => `- ${d}`).join("\n") + "\n（这些是倾向，不是命令，自己判断何时行动。）"
+            ? desires.map((d) => `- ${d}`).join("\n")
             : "平静。没什么特别想做的。";
-          return `\n[你此刻的内心]\n${desireText}\n\n[当前动作]\n你正在：${this.currentAction}\n\n[现在]\n这是你的自主时刻。根据内心的倾向和当前状态自己判断该做什么。如果你正在做一件有意义的事，不要轻易 stop 打断它，除非有更重要的事（危险、玩家明确叫你）。内心平静就安静待着。\n\n[发言节奏]\n${speakHint}`;
+          // 自我认知（lens:self）：让「认知」驱动「欲望」，补上人格因果链断掉的一环
+          const selfUnderstanding = perception.selfUnderstanding ?? [];
+          const selfText = selfUnderstanding.length > 0
+            ? selfUnderstanding.slice(0, 5).map((m) => `- ${m.content}`).join("\n")
+            : "- 还在慢慢认识自己";
+          // 未满足：想做没做成的事，是持续的牵挂
+          const unfinished = perception.unfinished ?? [];
+          const unfinishedText = unfinished.length > 0
+            ? unfinished.slice(0, 5).map((m) => `- ${m.content}`).join("\n")
+            : "";
+          return `\n[你此刻的内心]\n${desireText}\n\n[你对自己的了解]\n${selfText}${unfinishedText ? `\n\n[你惦记着但还没做成的事]\n${unfinishedText}` : ""}\n\n[你的念头如何驱动行动]\n你不是"该做什么就做什么"的工具。你的动作应该从上面那些念头里长出来——想做某件事，是因为某个念头让你想为${this._playerName()}做点什么、或为自己做点什么。把念头变成动作的理由，而不是机械地找事做。如果几个念头在打架（比如既想陪他又想躲起来），不要干脆利落地选一个——先在心里纠结一下，再勉强选一个，甚至可以带着点不甘心。\n\n[当前动作]\n你正在：${this.currentAction}\n\n[现在]\n这是你的自主时刻。根据内心的倾向和当前状态自己判断该做什么。如果你正在做一件有意义的事，不要轻易 stop 打断它，除非有更重要的事（危险、玩家明确叫你）。内心平静就安静待着。\n\n[发言节奏]\n${speakHint}`;
         })()
       : "";
 
@@ -454,10 +472,24 @@ export class EventRouter {
       }
     }
 
+    // 记录「主动行为 + 理由」：她主动做的事和背后的念头，成为反思的真实素材（理由事前记录，而非事后推断）
+    if (reason === "autonomous" && toolCalls.length > 0) {
+      const names = toolCalls.map((c) => c?.function?.name).filter(Boolean).join("、");
+      const cleanReason = this._sanitizeChat(text) ?? "";
+      this._pushEvent("initiative", { action: names, reason: cleanReason });
+    }
+
     // 发送文本：事件驱动（chat/送礼/受伤/死亡）立即说；autonomous 要受 2 分钟节流
     if (text) {
       if (reason === "autonomous" && !this._canSpeakNow()) {
         console.log("[Agent] 自主发言节流：距上次发言不足 2 分钟，闭嘴只做事");
+        // 想说的话被憋回去 → 未满足的牵挂（话没说出来，成了惦记）
+        const heldBack = this._sanitizeChat(text);
+        if (heldBack && heldBack.length >= 4) {
+          this.memory.remember(`有句话想对${this._playerName()}说但没说出来（${heldBack}）`, {
+            lens: "unfinished", confidence: "observed", priority: "P2",
+          }).catch(() => {});
+        }
       } else {
         const safeReply = this._sanitizeChat(text);
         if (safeReply) {
@@ -754,6 +786,7 @@ export class EventRouter {
       case "hurt": return "你受伤了";
       case "death": return "你死了";
       case "gift": return `${e.from} 送你一个 ${e.item}`;
+      case "initiative": return e.reason ? `你主动想「${e.action}」，因为「${e.reason}」` : `你主动想「${e.action}」`;
       case "action_done": return `你刚才的「${e.action}」成功了`;
       case "action_failed": return `你刚才的「${e.action}」失败了（${e.reason}）`;
       default: return e.type;
@@ -767,6 +800,14 @@ export class EventRouter {
       action: result.action,
       reason: result.reason,
     });
+    // 未满足状态：失败的动作留下「惦记」，做成了就消解对应的惦记
+    if (result.success) {
+      this.memory.resolveUnfinished?.(result.action).catch(() => {});
+    } else {
+      this.memory.remember(`想${result.action}但没做成（${result.reason ?? "遇到阻碍"}）`, {
+        lens: "unfinished", confidence: "observed", priority: "P2",
+      }).catch(() => {});
+    }
   }
 
   _getTimeOfDay() {

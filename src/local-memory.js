@@ -147,6 +147,19 @@ export class LocalMemory {
     return filtered.slice(-20).reverse();
   }
 
+  /** 消解未满足：某个动作做成了，移除对应「想做没做成」的牵挂 */
+  async resolveUnfinished(action) {
+    if (!action) return { resolved: false };
+    const store = this._load();
+    const idx = store.memories.findIndex((m) => m.lens === "unfinished" && (m.content ?? "").includes(action));
+    if (idx >= 0) {
+      store.memories.splice(idx, 1);
+      this._save(store);
+      return { resolved: true };
+    }
+    return { resolved: false };
+  }
+
   // ─── 检索：DeepSeek 单模型 ───────────────────────────────
 
   async _llmRetrieve(query, candidates) {
